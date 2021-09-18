@@ -1,0 +1,10 @@
+[Unit]
+Description=serve pacebin instance
+After=network.target
+
+[Service]
+EnvironmentFile=/etc/pacebin.conf
+ExecStart=/bin/sh -c '${BIN} -d "${DIR}" -p ${PORT} -s "${SEED}"'
+
+[Install]
+WantedBy=multi-user.target
