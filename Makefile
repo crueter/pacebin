@@ -23,11 +23,11 @@ $(BIN): $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 install-nginx:
-	@install -Dm644 doc/pastebin.nginx ${nginx_dir}/sites-available/pastebin
+	@install -Dm644 doc/pacebin.nginx ${nginx_dir}/sites-available/pacebin
 
 install-systemd:
-	@install -Dm644 doc/pastebin.service ${systemd_dir}/pastebin.service
-	@install -Dm644 doc/pastebin.conf ${DESTDIR}/${confdir}/pastebin.conf
+	@install -Dm644 doc/pacebin.service ${systemd_dir}/pacebin.service
+	@install -Dm644 doc/pacebin.conf ${DESTDIR}/${confdir}/pacebin.conf
 
 install-bin:
 	@install -Dm755 ${BIN} ${bindir}/${BIN}
