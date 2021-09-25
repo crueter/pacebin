@@ -32,7 +32,7 @@ To build this project, you'll need a libc implementation (only tested with glibc
 git clone https://git.swurl.xyz/swirl/pacebin && cd pacebin
 ```
 
-2. Compile:
+2. Now, you need to compile. When compiling, you can optionally choose to disable the ability to use custom links for pastes. This can easily be done by setting `DISABLE_CUSTOM_LINKS` to 1; i.e. `make DISABLE_CUSTOM_LINKS=1`. Defaults to 0, enabling them.
 ```bash
 make
 ```

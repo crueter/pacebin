@@ -4,8 +4,9 @@ systemd_dir=${DESTDIR}${confdir}/systemd/system
 nginx_dir=${DESTDIR}${confdir}/nginx
 bindir=${DESTDIR}${prefix}/bin
 
-CC			:= gcc
-CFLAGS		:= -O2
+DISABLE_CUSTOM_LINKS ?= 0
+CC			?= gcc
+CFLAGS		:= -O2 -DDISABLE_CUSTOM_LINKS=${DISABLE_CUSTOM_LINKS} ${CFLAGS}
 
 BIN			:= pacebin
 

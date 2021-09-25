@@ -104,6 +104,10 @@ void trim(char *str) {
     memmove(str, _str, len + 1);
 }
 
+#if DISABLE_CUSTOM_LINKS == 1
+void handle_post(struct mg_connection *nc, char *content, char *host) {
+    char *short_link = gen_random_link();
+#else
 void handle_post(struct mg_connection *nc, char *content, char *host, char *link) {
     char *short_link;
     if (strlen(link) == 0) {
@@ -117,6 +121,7 @@ void handle_post(struct mg_connection *nc, char *content, char *host, char *link
     if (paste_exists(short_link)) {
         return mg_http_reply(nc, 500, "", "a paste named %s already exists", short_link);
     }
+#endif
 
     FILE *url = get_paste_file(short_link, "w+");
     fputs(content, url);
@@ -165,7 +170,11 @@ static void ev_handler(struct mg_connection *nc, int ev, void *p, void *f) {
         char *body = strdup(hm->body.ptr);
 
         if (strncmp(hm->method.ptr, "POST", hm->method.len) == 0) {
+#if DISABLE_CUSTOM_LINKS == 1
+            handle_post(nc, body, host); // FIXME: return 400 on bad Content-Type
+#else
             handle_post(nc, body, host, uri); // FIXME: return 400 on bad Content-Type
+#endif
         } else if (strncmp(hm->method.ptr, "DELETE", hm->method.len) == 0) {
             handle_delete(nc, uri, body);
         } else if (strncmp(hm->method.ptr, "GET", hm->method.len) == 0) {
