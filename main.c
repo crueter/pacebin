@@ -56,14 +56,6 @@ bool paste_exists(char *link) {
     return file_exists(get_paste_filename(link));
 }
 
-FILE *get_paste_file(char *link, const char *mode) {
-    return fopen(get_paste_filename(link), mode);
-}
-
-FILE *get_del_file(char *link, const char *mode) {
-    return fopen(get_del_filename(link), mode);
-}
-
 char *gen_random_link() {
     srand(time(NULL));
     char *short_link = malloc(17);
@@ -123,14 +115,16 @@ void handle_post(struct mg_connection *nc, char *content, char *host, char *link
     }
 #endif
 
-    FILE *url = get_paste_file(short_link, "w+");
-    fputs(content, url);
-    fclose(url);
+    if (!mg_file_write(get_paste_filename(short_link), content, strlen(content))) {
+        fprintf(stderr, "failed to write to file %s", get_paste_filename(short_link));
+        return mg_http_reply(nc, 500, "", "failed to write data");
+    }
 
-    FILE *del = get_del_file(short_link, "w+");
     char *del_key = gen_del_key(short_link);
-    fputs(del_key, del);
-    fclose(del);
+    if (!mg_file_write(get_del_filename(short_link), del_key, strlen(del_key))) {
+        fprintf(stderr, "failed to write to file %s", get_del_filename(short_link));
+        return mg_http_reply(nc, 500, "", "failed to write data");
+    }
 
     char *del_header = malloc(256);
     sprintf(del_header, "X-Delete-With: %s\r\n", del_key);
@@ -140,9 +134,7 @@ void handle_post(struct mg_connection *nc, char *content, char *host, char *link
 
 void handle_delete(struct mg_connection *nc, char *link, char *del_key) {
     if (paste_exists(link)) {
-        FILE *del = get_del_file(link, "r");
-        char *key = malloc(256);
-        fgets(key, 255, del);
+        char *key = mg_file_read(get_del_filename(link), NULL);
         if (strcmp(key, del_key) == 0) {
             remove(get_paste_filename(link));
             remove(get_del_filename(link));
@@ -163,9 +155,17 @@ static void ev_handler(struct mg_connection *nc, int ev, void *p, void *f) {
         snprintf(uri, hm->uri.len + 1, "%s", hm->uri.ptr);
         trim(uri);
 
-        struct mg_str *mhost = mg_http_get_header(hm, "Host");
-        char *host = malloc(mhost->len + 1);
-        snprintf(host, mhost->len + 1, "%s", mhost->ptr);
+        struct mg_str *pmhost = mg_http_get_header(hm, "Host");
+        struct mg_str mhost;
+        if (pmhost == NULL) {
+            fprintf(stderr, "request sent with no Host header");
+            mhost = mg_str("<UNKNOWN DOMAIN>");
+        } else {
+            mhost = *pmhost;
+        }
+
+        char *host = malloc(mhost.len + 1);
+        snprintf(host, mhost.len + 1, "%s", mhost.ptr);
 
         char *body = strdup(hm->body.ptr);
 
