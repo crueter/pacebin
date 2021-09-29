@@ -53,7 +53,10 @@ char *get_del_filename(char *link) {
 }
 
 bool paste_exists(char *link) {
-    return file_exists(get_paste_filename(link));
+    char *filename = get_paste_filename(link);
+    bool ret = file_exists(filename);
+    free(filename);
+    return ret;
 }
 
 char *gen_random_link() {
@@ -78,11 +81,14 @@ char *gen_del_key(char *link) {
     }
     rand_str[16] = 0;
     sprintf(salt, "$6$%s", rand_str);
+    free(rand_str);
 
     char *use_link = malloc(strlen(link) + strlen(seed) + 1);
     sprintf(use_link, "%s%s", seed, link);
 
     char *del_key = crypt(use_link, salt);
+    free(salt);
+    free(use_link);
 
     return del_key;
 }
@@ -107,41 +113,63 @@ void handle_post(struct mg_connection *nc, char *content, char *host, char *link
     } else if (strlen(link) >= 255) {
         return mg_http_reply(nc, 413, "", "paste link length can not exceed 255 characters");
     } else {
-        short_link = link;
+        short_link = strdup(link);
     }
 
     if (paste_exists(short_link)) {
-        return mg_http_reply(nc, 500, "", "a paste named %s already exists", short_link);
+        mg_http_reply(nc, 500, "", "a paste named %s already exists", short_link);
+        return free(short_link);
+    }
+
+    if (strstr(short_link, "/")) {
+        mg_http_reply(nc, 400, "", "short link can not contain slashes");
+        return free(short_link);
     }
 #endif
 
-    if (!mg_file_write(get_paste_filename(short_link), content, strlen(content))) {
-        fprintf(stderr, "failed to write to file %s", get_paste_filename(short_link));
-        return mg_http_reply(nc, 500, "", "failed to write data");
+    char *paste_file = get_paste_filename(short_link);
+    if (!mg_file_write(paste_file, content, strlen(content))) {
+        fprintf(stderr, "failed to write to file %s", paste_file);
+        mg_http_reply(nc, 500, "", "failed to write data");
+        free(short_link);
+        return free(paste_file);
     }
+    free(paste_file);
 
     char *del_key = gen_del_key(short_link);
-    if (!mg_file_write(get_del_filename(short_link), del_key, strlen(del_key))) {
-        fprintf(stderr, "failed to write to file %s", get_del_filename(short_link));
-        return mg_http_reply(nc, 500, "", "failed to write data");
+    char *del_file = get_del_filename(short_link);
+    if (!mg_file_write(del_file, del_key, strlen(del_key))) {
+        fprintf(stderr, "failed to write to file %s", del_file);
+        mg_http_reply(nc, 500, "", "failed to write data");
+        free(short_link);
+        return free(del_file);
     }
+    free(del_file);
 
     char *del_header = malloc(256);
     sprintf(del_header, "X-Delete-With: %s\r\n", del_key);
 
     mg_http_reply(nc, 201, del_header, "%s%s/%s", proto, host, short_link);
+    free(del_header);
+    free(short_link);
 }
 
 void handle_delete(struct mg_connection *nc, char *link, char *del_key) {
     if (paste_exists(link)) {
-        char *key = mg_file_read(get_del_filename(link), NULL);
+        char *del_file = get_del_filename(link);
+        char *key = mg_file_read(del_file, NULL);
         if (strcmp(key, del_key) == 0) {
-            remove(get_paste_filename(link));
-            remove(get_del_filename(link));
+            char *paste_file = get_paste_filename(link);
+            remove(paste_file);
+            remove(del_file);
             mg_http_reply(nc, 204, "", "");
+
+            free(paste_file);
         } else {
             mg_http_reply(nc, 403, "", "incorrect deletion key");
         }
+        free(del_file);
+        free(key);
     } else {
         mg_http_reply(nc, 404, "", "this paste does not exist");
     }
@@ -179,14 +207,18 @@ static void ev_handler(struct mg_connection *nc, int ev, void *p, void *f) {
             handle_delete(nc, uri, body);
         } else if (strncmp(hm->method.ptr, "GET", hm->method.len) == 0) {
             if (strlen(uri) == 0) {
-                return mg_http_reply(nc, 200, "Content-Type: text/html\r\n", INDEX_HTML,
+                mg_http_reply(nc, 200, "Content-Type: text/html\r\n", INDEX_HTML,
                                      host, host, host, host, host); // FIXME: need better solution
+            } else {
+                mg_http_serve_dir(nc, hm, &s_http_server_opts);
             }
-
-            mg_http_serve_dir(nc, hm, &s_http_server_opts);
         } else {
             mg_http_reply(nc, 405, "Allow: GET, POST, DELETE\r\n", "");
         }
+
+        free(uri);
+        free(host);
+        free(body);
     }
 }
 
@@ -241,8 +273,15 @@ int main(int argc, char *argv[]) {
         printf ("Non-option argument %s\n", argv[index]);
     }
 
-    rec_mkdir(strcat(strdup(data_dir), "/paste"));
-    rec_mkdir(strcat(strdup(data_dir), "/del"));
+    char *paste_dir = strcat(strdup(data_dir), "/paste");
+    char *del_dir = strcat(strdup(data_dir), "/del");
+
+    rec_mkdir(paste_dir);
+    rec_mkdir(del_dir);
+
+    free(paste_dir);
+    free(del_dir);
+
     struct mg_mgr mgr;
     struct mg_connection *nc;
 
