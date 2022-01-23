@@ -191,11 +191,22 @@ static void ev_handler(struct mg_connection *nc, int ev, void *p, void *f) {
         } else {
             mhost = *pmhost;
         }
+        char *body = strdup(hm->body.ptr);
+
+        struct mg_str *pmtype = mg_http_get_header(hm, "Content-Type");
+        if (pmtype) {
+            struct mg_str mtype = *pmtype;
+
+            if (strncmp(mtype.ptr, "multipart/form-data", 19) == 0) {
+                struct mg_http_part part;
+                mg_http_next_multipart(hm->body, 0, &part);
+                body = malloc(part.body.len + 1);
+                snprintf(body, part.body.len + 1, "%s", part.body.ptr);
+            }
+        }
 
         char *host = malloc(mhost.len + 1);
         snprintf(host, mhost.len + 1, "%s", mhost.ptr);
-
-        char *body = strdup(hm->body.ptr);
 
         if (strncmp(hm->method.ptr, "POST", hm->method.len) == 0) {
 #if DISABLE_CUSTOM_LINKS == 1
