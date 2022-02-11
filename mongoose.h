@@ -556,7 +556,6 @@ enum { MG_FS_READ = 1, MG_FS_WRITE = 2, MG_FS_DIR = 4 };
 // list() calls fn() for every directory entry, allowing to list a directory
 struct mg_fs {
   int (*stat)(const char *path, size_t *size, time_t *mtime);
-  void (*list)(const char *path, void (*fn)(const char *, void *), void *);
   struct mg_fd *(*open)(const char *path, int flags);      // Open file
   void (*close)(struct mg_fd *fd);                         // Close file
   size_t (*read)(void *fd, void *buf, size_t len);         // Read file

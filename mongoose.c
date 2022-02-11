@@ -83,27 +83,6 @@ static int packed_stat(const char *path, size_t *size, time_t *mtime) {
   return 0;
 }
 
-static void packed_list(const char *dir, void (*fn)(const char *, void *),
-                        void *userdata) {
-  char buf[256], tmp[sizeof(buf)];
-  const char *path, *begin, *end;
-  size_t i, n = strlen(dir);
-  tmp[0] = '\0';  // Previously listed entry
-  for (i = 0; (path = mg_unlist(i)) != NULL; i++) {
-    if (!is_dir_prefix(dir, n, path)) continue;
-    begin = &path[n + 1];
-    end = strchr(begin, '/');
-    if (end == NULL) end = begin + strlen(begin);
-    snprintf(buf, sizeof(buf), "%.*s", (int) (end - begin), begin);
-    buf[sizeof(buf) - 1] = '\0';
-    // If this entry has been already listed, skip
-    // NOTE: we're assuming that file list is sorted alphabetically
-    if (strcmp(buf, tmp) == 0) continue;
-    fn(buf, userdata);  // Not yet listed, call user function
-    strcpy(tmp, buf);   // And save this entry as listed
-  }
-}
-
 static struct mg_fd *packed_open(const char *path, int flags) {
   size_t size = 0;
   const char *data = mg_unpack(path, &size, NULL);
@@ -144,7 +123,7 @@ static size_t packed_seek(void *fd, size_t offset) {
   return fp->pos;
 }
 
-struct mg_fs mg_fs_packed = {packed_stat,  packed_list, packed_open,
+struct mg_fs mg_fs_packed = {packed_stat,  packed_open,
                              packed_close, packed_read, packed_write,
                              packed_seek};
 
@@ -277,22 +256,6 @@ struct dirent *readdir(DIR *d) {
 }
 #endif
 
-static void p_list(const char *dir, void (*fn)(const char *, void *),
-                   void *userdata) {
-#if MG_ENABLE_DIRLIST
-  struct dirent *dp;
-  DIR *dirp;
-  if ((dirp = (opendir(dir))) == NULL) return;
-  while ((dp = readdir(dirp)) != NULL) {
-    if (!strcmp(dp->d_name, ".") || !strcmp(dp->d_name, "..")) continue;
-    fn(dp->d_name, userdata);
-  }
-  closedir(dirp);
-#else
-  (void) dir, (void) fn, (void) userdata;
-#endif
-}
-
 static struct mg_fd *p_open(const char *path, int flags) {
   const char *mode = flags == (MG_FS_READ | MG_FS_WRITE) ? "r+b"
                      : flags & MG_FS_READ                ? "rb"
@@ -347,11 +310,6 @@ static int p_stat(const char *path, size_t *size, time_t *mtime) {
   return 0;
 }
 
-static void p_list(const char *path, void (*fn)(const char *, void *),
-                   void *userdata) {
-  (void) path, (void) fn, (void) userdata;
-}
-
 static struct mg_fd *p_open(const char *path, int flags) {
   (void) path, (void) flags;
   return NULL;
@@ -377,7 +335,7 @@ static size_t p_seek(void *fd, size_t offset) {
 }
 #endif
 
-struct mg_fs mg_fs_posix = {p_stat, p_list,  p_open, p_close,
+struct mg_fs mg_fs_posix = {p_stat, p_open, p_close,
                             p_read, p_write, p_seek};
 
 #ifdef MG_ENABLE_LINES
@@ -973,68 +931,6 @@ static void printdirentry(const char *name, void *userdata) {
   }
 }
 
-static void listdir(struct mg_connection *c, struct mg_http_message *hm,
-                    struct mg_http_serve_opts *opts, char *dir) {
-  static const char *sort_js_code =
-      "<script>function srt(tb, sc, so, d) {"
-      "var tr = Array.prototype.slice.call(tb.rows, 0),"
-      "tr = tr.sort(function (a, b) { var c1 = a.cells[sc], c2 = b.cells[sc],"
-      "n1 = c1.getAttribute('name'), n2 = c2.getAttribute('name'), "
-      "t1 = a.cells[2].getAttribute('name'), "
-      "t2 = b.cells[2].getAttribute('name'); "
-      "return so * (t1 < 0 && t2 >= 0 ? -1 : t2 < 0 && t1 >= 0 ? 1 : "
-      "n1 ? parseInt(n2) - parseInt(n1) : "
-      "c1.textContent.trim().localeCompare(c2.textContent.trim())); });";
-  static const char *sort_js_code2 =
-      "for (var i = 0; i < tr.length; i++) tb.appendChild(tr[i]); "
-      "if (!d) window.location.hash = ('sc=' + sc + '&so=' + so); "
-      "};"
-      "window.onload = function() {"
-      "var tb = document.getElementById('tb');"
-      "var m = /sc=([012]).so=(1|-1)/.exec(window.location.hash) || [0, 2, 1];"
-      "var sc = m[1], so = m[2]; document.onclick = function(ev) { "
-      "var c = ev.target.rel; if (c) {if (c == sc) so *= -1; srt(tb, c, so); "
-      "sc = c; ev.preventDefault();}};"
-      "srt(tb, sc, so, true);"
-      "}"
-      "</script>";
-  struct mg_fs *fs = opts->fs == NULL ? &mg_fs_posix : opts->fs;
-  struct printdirentrydata d = {c, hm, opts, dir};
-  char tmp[10];
-  size_t off, n;
-
-  mg_printf(c,
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/html; charset=utf-8\r\n"
-            "%s"
-            "Content-Length:         \r\n\r\n",
-            opts->extra_headers == NULL ? "" : opts->extra_headers);
-  off = c->send.len;  // Start of body
-  mg_printf(c,
-            "<!DOCTYPE html><html><head><title>Index of %.*s</title>%s%s"
-            "<style>th,td {text-align: left; padding-right: 1em; "
-            "font-family: monospace; }</style></head>"
-            "<body><h1>Index of %.*s</h1><table cellpadding=\"0\"><thead>"
-            "<tr><th><a href=\"#\" rel=\"0\">Name</a></th><th>"
-            "<a href=\"#\" rel=\"1\">Modified</a></th>"
-            "<th><a href=\"#\" rel=\"2\">Size</a></th></tr>"
-            "<tr><td colspan=\"3\"><hr></td></tr>"
-            "</thead>"
-            "<tbody id=\"tb\">\n",
-            (int) hm->uri.len, hm->uri.ptr, sort_js_code, sort_js_code2,
-            (int) hm->uri.len, hm->uri.ptr);
-
-  fs->list(dir, printdirentry, &d);
-  mg_printf(c,
-            "</tbody><tfoot><tr><td colspan=\"3\"><hr></td></tr></tfoot>"
-            "</table><address>Mongoose v.%s</address></body></html>\n",
-            MG_VERSION);
-  n = (size_t) snprintf(tmp, sizeof(tmp), "%lu",
-                        (unsigned long) (c->send.len - off));
-  if (n > sizeof(tmp)) n = 0;
-  memcpy(c->send.buf + off - 10, tmp, n);  // Set content length
-}
-
 static void remove_double_dots(char *s) {
   char *p = s;
   while (*s != '\0') {
@@ -1094,11 +990,7 @@ void mg_http_serve_dir(struct mg_connection *c, struct mg_http_message *hm,
     int flags = uri_to_path(c, hm, opts, path, sizeof(path));
     if (flags == 0) return;
     LOG(LL_DEBUG, ("%.*s %s %d", (int) hm->uri.len, hm->uri.ptr, path, flags));
-    if (flags & MG_FS_DIR) {
-      listdir(c, hm, opts, path);
-    } else {
-      mg_http_serve_file(c, hm, path, opts);
-    }
+    mg_http_serve_file(c, hm, path, opts);
   }
 }
 
