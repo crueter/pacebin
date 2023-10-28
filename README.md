@@ -1,8 +1,13 @@
+# pacebin
+
 A dead-simple, self-hostable, filesystem-backed pastebin, written in C using [Mongoose](https://cesanta.com).
 
 This project is largely based off of my [clink](https://git.swurl.xyz/swirl/clink) project. Almost all the main code comes from there, and it uses the exact same design philosophies.
 
 Please access this project on my [Gitea](https://git.swurl.xyz/swirl/pacebin) instance, NOT GitHub.
+
+## Maintenance Note
+This project is still maintained! Occasional certificate expirations may occur, this is due to disputes between my ISP and I regarding server hosting and certificate renewal. Please be patient, I have a life. :)
 
 # Features
 - Tiny executable size (~80kb)
