@@ -123,7 +123,7 @@ static size_t packed_seek(void *fd, size_t offset) {
   return fp->pos;
 }
 
-struct mg_fs mg_fs_packed = {packed_stat,  packed_open,
+struct mg_fs mg_fs_packed = {packed_stat, packed_open,
                              packed_close, packed_read, packed_write,
                              packed_seek};
 
@@ -684,32 +684,6 @@ char *mg_http_etag(char *buf, size_t len, size_t size, time_t mtime) {
   return buf;
 }
 
-int mg_http_upload(struct mg_connection *c, struct mg_http_message *hm,
-                   const char *dir) {
-  char offset[40] = "", name[200] = "", path[256];
-  mg_http_get_var(&hm->query, "offset", offset, sizeof(offset));
-  mg_http_get_var(&hm->query, "name", name, sizeof(name));
-  if (name[0] == '\0') {
-    mg_http_reply(c, 400, "", "%s", "name required");
-    return -1;
-  } else {
-    FILE *fp;
-    size_t oft = strtoul(offset, NULL, 0);
-    snprintf(path, sizeof(path), "%s%c%s", dir, MG_DIRSEP, name);
-    LOG(LL_DEBUG,
-        ("%p %d bytes @ %d [%s]", c->fd, (int) hm->body.len, (int) oft, name));
-    if ((fp = fopen(path, oft == 0 ? "wb" : "ab")) == NULL) {
-      mg_http_reply(c, 400, "", "fopen(%s): %d", name, errno);
-      return -2;
-    } else {
-      fwrite(hm->body.ptr, 1, hm->body.len, fp);
-      fclose(fp);
-      mg_http_reply(c, 200, "", "");
-      return (int) hm->body.len;
-    }
-  }
-}
-
 static void static_cb(struct mg_connection *c, int ev, void *ev_data,
                       void *fn_data) {
   if (ev == MG_EV_WRITE || ev == MG_EV_POLL) {
@@ -951,47 +925,65 @@ static void remove_double_dots(char *s) {
 }
 
 // Resolve requested file into `path` and return its fs->stat() result
-static int uri_to_path(struct mg_connection *c, struct mg_http_message *hm,
-                       struct mg_http_serve_opts *opts, char *path,
-                       size_t path_size) {
-  struct mg_fs *fs = opts->fs == NULL ? &mg_fs_posix : opts->fs;
+static int uri_to_path2(struct mg_connection *c, struct mg_http_message *hm,
+                        struct mg_fs *fs, struct mg_str url, struct mg_str dir,
+                        char *path, size_t path_size) {
   int flags = 0, tmp;
   // Append URI to the root_dir, and sanitize it
-  size_t n = (size_t) snprintf(path, path_size, "%s", opts->root_dir);
+  size_t n = (size_t) snprintf(path, path_size, "%.*s", (int) dir.len, dir.ptr);
   if (n > path_size) n = path_size;
-  mg_url_decode(hm->uri.ptr, hm->uri.len, path + n, path_size - n, 0);
-  path[path_size - 1] = '\0';  // Double-check
-  remove_double_dots(path);
-  n = strlen(path);
-  while (n > 0 && path[n - 1] == '/') path[--n] = 0;  // Strip trailing slashes
-  flags = fs->stat(path, NULL, NULL);                 // Does it exist?
-  if (flags == 0) {
-    mg_http_reply(c, 404, "", "Not found\n");  // Does not exist, doh
-  } else if (flags & MG_FS_DIR) {
-    if (((snprintf(path + n, path_size - n, "/index.html") > 0 &&
-          (tmp = fs->stat(path, NULL, NULL)) != 0) ||
-         (snprintf(path + n, path_size - n, "/index.shtml") > 0 &&
-          (tmp = fs->stat(path, NULL, NULL)) != 0))) {
-      flags = tmp;
-    } else {
-      path[n] = '\0';  // Remove appended index file name
+  path[path_size - 1] = '\0';
+  if ((fs->stat(path, NULL, NULL) & MG_FS_DIR) == 0) {
+    mg_http_reply(c, 400, "", "Invalid web root [%.*s]\n", (int) dir.len,
+                  dir.ptr);
+  } else {
+    if (n + 2 < path_size) path[n++] = '/', path[n] = '\0';
+    mg_url_decode(hm->uri.ptr + url.len, hm->uri.len - url.len, path + n,
+                  path_size - n, 0);
+    path[path_size - 1] = '\0';  // Double-check
+    remove_double_dots(path);
+    n = strlen(path);
+    LOG(LL_DEBUG, ("--> %s", path));
+    while (n > 0 && path[n - 1] == '/') path[--n] = 0;  // Trim trailing slashes
+    flags = fs->stat(path, NULL, NULL);                 // Does it exist?
+    if (flags == 0) {
+      mg_http_reply(c, 404, "", "Not found\n");  // Does not exist, doh
+    } else if (flags & MG_FS_DIR) {
+      if (((snprintf(path + n, path_size - n, "/index.html") > 0 &&
+            (tmp = fs->stat(path, NULL, NULL)) != 0) ||
+           (snprintf(path + n, path_size - n, "/index.shtml") > 0 &&
+            (tmp = fs->stat(path, NULL, NULL)) != 0))) {
+        flags = tmp;
+      } else {
+        path[n] = '\0';  // Remove appended index file name
+      }
     }
   }
   return flags;
 }
 
+static int uri_to_path(struct mg_connection *c, struct mg_http_message *hm,
+                       struct mg_http_serve_opts *opts, char *path,
+                       size_t path_size) {
+  struct mg_fs *fs = opts->fs == NULL ? &mg_fs_posix : opts->fs;
+  struct mg_str k, v, s = mg_str(opts->root_dir), u = {0, 0}, p = {0, 0};
+  while (mg_commalist(&s, &k, &v)) {
+    if (v.len == 0) v = k, k = mg_str("/");
+    if (hm->uri.len < k.len) continue;
+    if (mg_strcmp(k, mg_str_n(hm->uri.ptr, k.len)) != 0) continue;
+    u = k, p = v;
+  }
+  return uri_to_path2(c, hm, fs, u, p, path, path_size);
+}
+
 void mg_http_serve_dir(struct mg_connection *c, struct mg_http_message *hm,
                        struct mg_http_serve_opts *opts) {
   char path[MG_PATH_MAX] = "";
-  struct mg_fs *fs = opts->fs == NULL ? &mg_fs_posix : opts->fs;
-  if ((fs->stat(opts->root_dir, NULL, NULL) & MG_FS_DIR) == 0) {
-    mg_http_reply(c, 400, "", "Invalid web root [%s]\n", opts->root_dir);
-  } else {
-    int flags = uri_to_path(c, hm, opts, path, sizeof(path));
-    if (flags == 0) return;
-    LOG(LL_DEBUG, ("%.*s %s %d", (int) hm->uri.len, hm->uri.ptr, path, flags));
-    mg_http_serve_file(c, hm, path, opts);
-  }
+  const char *sp = opts->ssi_pattern;
+  int flags = uri_to_path(c, hm, opts, path, sizeof(path));
+  if (flags == 0) return;
+  LOG(LL_DEBUG, ("%.*s %s %d", (int) hm->uri.len, hm->uri.ptr, path, flags));
+  mg_http_serve_file(c, hm, path, opts);
 }
 
 static bool mg_is_url_safe(int c) {
@@ -1397,6 +1389,7 @@ static bool mg_v4mapped(struct mg_str str, struct mg_addr *addr) {
 
 static bool mg_aton6(struct mg_str str, struct mg_addr *addr) {
   size_t i, j = 0, n = 0, dc = 42;
+  if (str.len > 2 && str.ptr[0] == '[') str.ptr++, str.len -= 2;
   if (mg_v4mapped(str, addr)) return true;
   for (i = 0; i < str.len; i++) {
     if ((str.ptr[i] >= '0' && str.ptr[i] <= '9') ||
@@ -1583,6 +1576,7 @@ static void mg_set_non_blocking_mode(SOCKET fd) {
 
 SOCKET mg_open_listener(const char *url, struct mg_addr *addr) {
   SOCKET fd = INVALID_SOCKET;
+  int s_err = 0;  // Memoized socket error, in case closesocket() overrides it
   memset(addr, 0, sizeof(*addr));
   addr->port = mg_htons(mg_url_port(url));
   if (!mg_aton(mg_url_host(url), addr)) {
@@ -1630,12 +1624,14 @@ SOCKET mg_open_listener(const char *url, struct mg_addr *addr) {
       }
       mg_set_non_blocking_mode(fd);
     } else if (fd != INVALID_SOCKET) {
+      s_err = MG_SOCK_ERRNO;
       closesocket(fd);
       fd = INVALID_SOCKET;
     }
   }
   if (fd == INVALID_SOCKET) {
-    LOG(LL_ERROR, ("Failed to listen on %s, errno %d", url, MG_SOCK_ERRNO));
+    if (s_err == 0) s_err = MG_SOCK_ERRNO;
+    LOG(LL_ERROR, ("Failed to listen on %s, errno %d", url, s_err));
   }
 
   return fd;
@@ -2004,8 +2000,7 @@ void mg_mgr_poll(struct mg_mgr *mgr, int ms) {
     mg_call(c, MG_EV_POLL, &now);
     LOG(LL_VERBOSE_DEBUG,
         ("%lu %c%c %c%c%c", c->id, c->is_readable ? 'r' : '-',
-         c->is_writable ? 'w' : '-',
-         c->is_connecting ? 'C' : 'c',
+         c->is_writable ? 'w' : '-', c->is_connecting ? 'C' : 'c',
          c->is_resolving ? 'R' : 'r', c->is_closing ? 'C' : 'c'));
     if (c->is_resolving || c->is_closing) {
       // Do nothing
@@ -2164,6 +2159,7 @@ void mg_timer_poll(unsigned long now_ms) {
 #ifdef MG_ENABLE_LINES
 #line 1 "src/url.c"
 #endif
+
 #include <stdlib.h>
 
 struct url {
@@ -2208,10 +2204,6 @@ struct mg_str mg_url_host(const char *url) {
              : u.uri ? u.uri - u.host
                      : u.end - u.host;
   struct mg_str s = mg_str_n(url + u.host, n);
-  if (s.len > 2 && s.ptr[0] == '[' && s.ptr[s.len - 1] == ']') {
-    s.len -= 2;
-    s.ptr++;
-  }
   return s;
 }
 
@@ -2223,8 +2215,10 @@ const char *mg_url_uri(const char *url) {
 unsigned short mg_url_port(const char *url) {
   struct url u = urlparse(url);
   unsigned short port = 0;
-  if (memcmp(url, "http:", 5) == 0) port = 80;
-  if (memcmp(url, "https:", 6) == 0) port = 443;
+  if (memcmp(url, "http:", 5) == 0 || memcmp(url, "ws:", 3) == 0) port = 80;
+  if (memcmp(url, "wss:", 4) == 0 || memcmp(url, "https:", 6) == 0) port = 443;
+  if (memcmp(url, "mqtt:", 5) == 0) port = 1883;
+  if (memcmp(url, "mqtts:", 6) == 0) port = 8883;
   if (u.port) port = (unsigned short) atoi(url + u.port);
   return port;
 }

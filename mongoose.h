@@ -24,6 +24,7 @@
 extern "C" {
 #endif
 
+
 #ifndef MG_ENABLE_SOCKET
 #define MG_ENABLE_SOCKET 1
 #endif
@@ -71,6 +72,7 @@ extern "C" {
 #define MG_PATH_MAX PATH_MAX
 #endif
 
+
 #define MG_ARCH_CUSTOM 0
 #define MG_ARCH_UNIX 1
 #define MG_ARCH_WIN32 2
@@ -109,6 +111,14 @@ extern "C" {
 #include <mongoose_custom.h>
 #endif
 
+
+
+
+
+
+
+
+
 #if MG_ARCH == MG_ARCH_ESP32
 
 #include <ctype.h>
@@ -136,6 +146,7 @@ extern "C" {
 
 #endif
 
+
 #if MG_ARCH == MG_ARCH_ESP8266
 
 #include <ctype.h>
@@ -161,6 +172,7 @@ extern "C" {
 #define MG_INT64_FMT "%lld"
 
 #endif
+
 
 #if MG_ARCH == MG_ARCH_FREERTOS_LWIP
 
@@ -213,6 +225,7 @@ static inline void *mg_calloc(int cnt, size_t size) {
 #define gmtime_r(a, b) gmtime(a)
 
 #endif  // MG_ARCH == MG_ARCH_FREERTOS_LWIP
+
 
 #if MG_ARCH == MG_ARCH_FREERTOS_TCP
 
@@ -300,6 +313,7 @@ struct timeval {
 
 #endif  // MG_ARCH == MG_ARCH_FREERTOS_TCP
 
+
 #if MG_ARCH == MG_ARCH_UNIX
 
 #define _DARWIN_UNLIMITED_SELECT 1  // No limit on file descriptors
@@ -335,6 +349,7 @@ struct timeval {
 #define MG_ENABLE_DIRLIST 1
 
 #endif
+
 
 #if MG_ARCH == MG_ARCH_WIN32
 
@@ -432,6 +447,7 @@ static __inline struct tm *localtime_r(time_t *t, struct tm *tm) {
 
 #endif
 
+
 #include <ctype.h>
 #include <string.h>
 
@@ -458,6 +474,10 @@ struct mg_str mg_strstrip(struct mg_str s);
 struct mg_str mg_strdup(const struct mg_str s);
 const char *mg_strstr(const struct mg_str haystack, const struct mg_str needle);
 
+
+
+
+
 #if MG_ENABLE_LOG
 #define LOG(level, args)                                                   \
   do {                                                                     \
@@ -472,6 +492,7 @@ void mg_log_set_callback(void (*fn)(const void *, size_t, void *), void *param);
 #define LOG(level, args) (void) 0
 #define mg_log_set(x) (void) (x)
 #endif
+
 
 struct mg_timer {
   unsigned long period_ms;  // Timer period in milliseconds
@@ -491,6 +512,10 @@ void mg_timer_init(struct mg_timer *, unsigned long ms, unsigned,
                    void (*fn)(void *), void *);
 void mg_timer_free(struct mg_timer *);
 void mg_timer_poll(unsigned long uptime_ms);
+
+
+
+
 
 char *mg_file_read(const char *path, size_t *size);
 bool mg_file_write(const char *path, const void *buf, size_t len);
@@ -549,6 +574,9 @@ void mg_usleep(unsigned long usecs);
     *h = (elem_)->next;                    \
   } while (0)
 
+
+
+
 enum { MG_FS_READ = 1, MG_FS_WRITE = 2, MG_FS_DIR = 4 };
 
 // Filesystem API functions
@@ -572,12 +600,15 @@ struct mg_fd {
 extern struct mg_fs mg_fs_posix;   // POSIX open/close/read/write/seek
 extern struct mg_fs mg_fs_packed;  // Packed FS, see examples/complete
 
+
+
 unsigned short mg_url_port(const char *url);
 int mg_url_is_ssl(const char *url);
 struct mg_str mg_url_host(const char *url);
 struct mg_str mg_url_user(const char *url);
 struct mg_str mg_url_pass(const char *url);
 const char *mg_url_uri(const char *url);
+
 
 #include <stddef.h>
 
@@ -612,6 +643,12 @@ enum {
   MG_EV_HTTP_CHUNK,  // HTTP chunk (partial msg)     struct mg_http_message *
   MG_EV_USER,        // Starting ID for user events
 };
+
+
+
+
+
+
 
 struct mg_addr {
   uint16_t port;    // TCP or UDP port in network byte order
@@ -677,6 +714,12 @@ char *mg_ntoa(const struct mg_addr *addr, char *buf, size_t len);
 struct mg_connection *mg_mkpipe(struct mg_mgr *, mg_event_handler_t, void *);
 void mg_mgr_wakeup(struct mg_connection *pipe);
 
+
+
+
+
+
+
 struct mg_http_header {
   struct mg_str name;   // Header name
   struct mg_str value;  // Header value
@@ -694,6 +737,7 @@ struct mg_http_message {
 // Parameter for mg_http_serve_dir()
 struct mg_http_serve_opts {
   const char *root_dir;       // Web root directory, must be non-NULL
+  const char *ssi_pattern;    // SSI file name pattern, e.g. #.shtml
   const char *extra_headers;  // Extra HTTP headers to add in responses
   const char *mime_types;     // Extra mime types, ext1=type1,ext2=type2,..
   struct mg_fs *fs;           // Filesystem implementation. Use NULL for POSIX

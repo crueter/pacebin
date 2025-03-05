@@ -1,0 +1,56 @@
+#!/bin/sh
+if [ "$PACEBIN_CONF" == "" ]
+then
+    PACEBIN_CONF="/etc/pacebin.conf"
+fi
+
+source $PACEBIN_CONF
+
+function pastegrep() {
+    cd $DIR/files
+    for pattern in $@
+    do
+        grep -Ere "$pattern"
+    done
+}
+
+function pastelist() {
+    cd $DIR/files
+    find * -type f || echo "No pastes are currently stored."
+}
+
+function pastecat() {
+    cd $DIR/files
+    for i in $@
+    do
+        echo "\nPaste $i:\n"
+        cat $i
+    done
+}
+
+function pasterm() {
+    cd $DIR
+    for file in $@
+    do
+        rm -vf {del,files}/$file
+    done
+}
+
+case $1 in
+    "grep")
+        pastegrep ${@:2} ;;
+    "ls")
+        pastelist ${@:2} ;;
+    "rm")
+        pasterm ${@:2} ;;
+    "cat")
+        pastecat ${@:2} ;;
+    *)
+        echo "pacectl: CLI utility for managing pacebin data"
+        echo "syntax: pacectl [command] <patterns...>"
+        echo "Available commands:"
+        echo "	grep <patterns...>: Search for all paste names matching patterns"
+        echo "	rm <UUIDs...>: Remove pastes specified by the UUIDs."
+        echo "	ls: List all pastes (format: UUID/name)."
+        echo "	cat: View paste content specified by UUIDs." ;;
+esac

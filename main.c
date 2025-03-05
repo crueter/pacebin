@@ -32,45 +32,62 @@ static void rec_mkdir(const char *dir) {
             mkdir(tmp, S_IRWXU);
             *p = '/';
         }
+
     mkdir(tmp, S_IRWXU);
 }
 
-bool file_exists(char *filename) {
+bool exists(char *filename) {
     struct stat buffer;
     return (stat (filename, &buffer) == 0);
 }
 
-char *get_paste_filename(char *link) {
-    char *filename = malloc(strlen(data_dir) + strlen(link) + 8);
-    sprintf(filename, "%s/paste/%s", data_dir, link);
+char *get_file_filename(char *path) {
+    char *filename = malloc(strlen(data_dir) + strlen(path) + 8);
+    snprintf(filename, strlen(data_dir) + strlen(path) + 8, "%s/files/%s", data_dir, path);
     return filename;
 }
 
-char *get_del_filename(char *link) {
-    char *filename = malloc(strlen(data_dir) + strlen(link) + 6);
-    sprintf(filename, "%s/del/%s", data_dir, link);
+char *get_del_filename(char *path) {
+    char *filename = malloc(strlen(data_dir) + strlen(path) + 6);
+    snprintf(filename, strlen(data_dir) + strlen(path) + 6, "%s/del/%s", data_dir, path);
     return filename;
 }
 
-bool paste_exists(char *link) {
-    char *filename = get_paste_filename(link);
-    bool ret = file_exists(filename);
+bool file_exists(char *path) {
+    char *filename = get_file_filename(path);
+    bool ret = exists(filename);
     free(filename);
     return ret;
 }
 
-char *gen_random_link() {
-    srand(time(NULL));
-    char *short_link = malloc(17);
-    do {
-        for(size_t i = 0; i < 16; ++i) {
-            sprintf(short_link + i, "%x", rand() % 16);
-        }
-    } while (paste_exists(short_link));
-    return short_link;
+char *get_file_filename_shortid(char *shortid, char *file) {
+    char *full = malloc(strlen(shortid) + strlen(file) + 2);
+    snprintf(full, strlen(shortid) + strlen(file) + 2, "%s/%s", shortid, file);
+    char *ret = get_file_filename(full);
+    free(full);
+    return ret;
 }
 
-char *gen_del_key(char *link) {
+char *get_del_filename_shortid(char *shortid, char *file) {
+    char *full = malloc(strlen(shortid) + strlen(file) + 2);
+    snprintf(full, strlen(shortid) + strlen(file) + 2, "%s/%s", shortid, file);
+    char *ret = get_del_filename(full);
+    free(full);
+    return ret;
+}
+
+char *gen_random_shortid() {
+    srand(time(NULL));
+    char *shortid = malloc(17);
+    do {
+        for(size_t i = 0; i < 16; ++i) {
+            sprintf(shortid + i, "%x", rand() % 16);
+        }
+    } while (file_exists(shortid));
+    return shortid;
+}
+
+char *gen_del_key(char *shortid, char *file) {
     char *salt = malloc(20);
     char *rand_str = malloc(17);
     srand(time(NULL));
@@ -83,8 +100,8 @@ char *gen_del_key(char *link) {
     sprintf(salt, "$6$%s", rand_str);
     free(rand_str);
 
-    char *use_link = malloc(strlen(link) + strlen(seed) + 1);
-    sprintf(use_link, "%s%s", seed, link);
+    char *use_link = malloc(strlen(shortid) + strlen(file) + strlen(seed) + 1);
+    sprintf(use_link, "%s%s%s", seed, shortid, file);
 
     char *del_key = crypt(use_link, salt);
     free(salt);
@@ -102,46 +119,38 @@ void trim(char *str) {
     memmove(str, _str, len + 1);
 }
 
-#if DISABLE_CUSTOM_LINKS == 1
-void handle_post(struct mg_connection *nc, char *content, char *host) {
-    char *short_link = gen_random_link();
-#else
-void handle_post(struct mg_connection *nc, char *content, char *host, char *link) {
-    char *short_link;
-    if (strlen(link) == 0) {
-        short_link = gen_random_link();
-    } else if (strlen(link) >= 255) {
-        return mg_http_reply(nc, 413, "", "paste link length can not exceed 255 characters");
-    } else {
-        short_link = strdup(link);
+void handle_post(struct mg_connection *nc, struct mg_str content, char *host, char *filename) {
+    char *shortid = gen_random_shortid();
+    if (strlen(filename) >= 255) {
+        return mg_http_reply(nc, 413, "", "filename length can not exceed 255 characters");
+    } else if (strlen(filename) == 0) {
+        return mg_http_reply(nc, 400, "", "please provide a filename");
     }
 
-    if (paste_exists(short_link)) {
-        mg_http_reply(nc, 500, "", "a paste named %s already exists", short_link);
-        return free(short_link);
-    }
+    char *shortid_dir = get_file_filename(shortid);
+    char *shortid_del_dir = get_del_filename(shortid);
 
-    if (strstr(short_link, "/")) {
-        mg_http_reply(nc, 400, "", "short link can not contain slashes");
-        return free(short_link);
-    }
-#endif
+    mkdir(shortid_dir, S_IRWXU);
+    mkdir(shortid_del_dir, S_IRWXU);
 
-    char *paste_file = get_paste_filename(short_link);
-    if (!mg_file_write(paste_file, content, strlen(content))) {
-        fprintf(stderr, "failed to write to file %s", paste_file);
+    free(shortid_dir);
+    free(shortid_del_dir);
+
+    unsigned char *ucont = (unsigned char *) content.ptr;
+    char *file = get_file_filename_shortid(shortid, filename);
+    if (!mg_file_write(file, ucont, content.len)) {
+        fprintf(stderr, "failed to write to file %s", file);
         mg_http_reply(nc, 500, "", "failed to write data");
-        free(short_link);
-        return free(paste_file);
+        return free(shortid);
     }
-    free(paste_file);
+    free(file);
 
-    char *del_key = gen_del_key(short_link);
-    char *del_file = get_del_filename(short_link);
+    char *del_key = gen_del_key(shortid, filename);
+    char *del_file = get_del_filename_shortid(shortid, filename);
     if (!mg_file_write(del_file, del_key, strlen(del_key))) {
         fprintf(stderr, "failed to write to file %s", del_file);
         mg_http_reply(nc, 500, "", "failed to write data");
-        free(short_link);
+        free(shortid);
         return free(del_file);
     }
     free(del_file);
@@ -149,29 +158,32 @@ void handle_post(struct mg_connection *nc, char *content, char *host, char *link
     char *del_header = malloc(256);
     sprintf(del_header, "X-Delete-With: %s\r\n", del_key);
 
-    mg_http_reply(nc, 201, del_header, "%s%s/%s", proto, host, short_link);
+    mg_http_reply(nc, 201, del_header, "%s%s/%s/%s", proto, host, shortid, filename);
+
     free(del_header);
-    free(short_link);
+    free(shortid);
 }
 
 void handle_delete(struct mg_connection *nc, char *link, char *del_key) {
-    if (paste_exists(link)) {
-        char *del_file = get_del_filename(link);
-        char *key = mg_file_read(del_file, NULL);
+    if (file_exists(link)) {
+        char *link_del_file = get_del_filename(link);
+        char *key = mg_file_read(link_del_file, NULL);
         if (strcmp(key, del_key) == 0) {
-            char *paste_file = get_paste_filename(link);
-            remove(paste_file);
-            remove(del_file);
+#define remove_free(stmt) { char *tmp = stmt; remove(tmp); free(tmp); }
+            remove_free(link_del_file);
+            remove_free(get_del_filename(link));
+            remove_free(get_file_filename(link));
+            char *shortid = strtok(link, "/");
+            remove_free(get_file_filename(shortid));
+            remove_free(get_del_filename(shortid));
+#undef remove_free
             mg_http_reply(nc, 204, "", "");
-
-            free(paste_file);
         } else {
             mg_http_reply(nc, 403, "", "incorrect deletion key");
         }
-        free(del_file);
         free(key);
     } else {
-        mg_http_reply(nc, 404, "", "this paste does not exist");
+        mg_http_reply(nc, 404, "", "this file does not exist");
     }
 }
 
@@ -191,40 +203,25 @@ static void ev_handler(struct mg_connection *nc, int ev, void *p, void *f) {
         } else {
             mhost = *pmhost;
         }
-        char *body = strdup(hm->body.ptr);
-
-        struct mg_str *pmtype = mg_http_get_header(hm, "Content-Type");
-        if (pmtype) {
-            struct mg_str mtype = *pmtype;
-
-            if (strncmp(mtype.ptr, "multipart/form-data", 19) == 0) {
-                struct mg_http_part part;
-                mg_http_next_multipart(hm->body, 0, &part);
-                body = malloc(part.body.len + 1);
-                snprintf(body, part.body.len + 1, "%s", part.body.ptr);
-            }
-        }
 
         char *host = malloc(mhost.len + 1);
         snprintf(host, mhost.len + 1, "%s", mhost.ptr);
 
-        if (strncmp(hm->method.ptr, "POST", hm->method.len) == 0) {
-#if DISABLE_CUSTOM_LINKS == 1
-            handle_post(nc, body, host); // FIXME: return 400 on bad Content-Type
-#else
-            handle_post(nc, body, host, uri); // FIXME: return 400 on bad Content-Type
-#endif
+        char *body = strdup(hm->body.ptr);
+
+        if (strncmp(hm->method.ptr, "POST", hm->method.len) == 0 || strncmp(hm->method.ptr, "PUT", hm->method.len) == 0) {
+            handle_post(nc, hm->body, host, uri); // FIXME: return 400 on bad Content-Type
         } else if (strncmp(hm->method.ptr, "DELETE", hm->method.len) == 0) {
             handle_delete(nc, uri, body);
         } else if (strncmp(hm->method.ptr, "GET", hm->method.len) == 0) {
             if (strlen(uri) == 0) {
-                mg_http_reply(nc, 200, "Content-Type: text/html\r\n", INDEX_HTML,
+                return mg_http_reply(nc, 200, "Content-Type: text/html\r\n", INDEX_HTML,
                                      host, host, host, host, host); // FIXME: need better solution
-            } else {
-                mg_http_serve_dir(nc, hm, &s_http_server_opts);
             }
+
+            mg_http_serve_dir(nc, hm, &s_http_server_opts);
         } else {
-            mg_http_reply(nc, 405, "Allow: GET, POST, DELETE\r\n", "");
+            mg_http_reply(nc, 405, "Allow: GET, PUT, POST, DELETE\r\n", "");
         }
 
         free(uri);
@@ -255,7 +252,7 @@ int main(int argc, char *argv[]) {
             proto = "https://";
             break;
         case 'h':
-            printf("pacebin: a minimal pastebin\n");
+            printf("pacebin: a minimal file-upload service\n");
             printf("usage: %s [-p port] [-d data_dir] [-s seed] [-k]\n\n", argv[0]);
             printf("options:\n");
             printf("-p <port>\t\tport to use (default 8081)\n");
@@ -284,20 +281,20 @@ int main(int argc, char *argv[]) {
         printf ("Non-option argument %s\n", argv[index]);
     }
 
-    char *paste_dir = strcat(strdup(data_dir), "/paste");
+    char *files_dir = strcat(strdup(data_dir), "/files");
     char *del_dir = strcat(strdup(data_dir), "/del");
 
-    rec_mkdir(paste_dir);
+    rec_mkdir(files_dir);
     rec_mkdir(del_dir);
 
-    free(paste_dir);
+    free(files_dir);
     free(del_dir);
 
     struct mg_mgr mgr;
     struct mg_connection *nc;
 
     char *root = malloc(strlen(data_dir) + 7);
-    snprintf(root, strlen(data_dir) + 7, "%s/paste", data_dir);
+    snprintf(root, strlen(data_dir) + 7, "%s/files", data_dir);
     memset(&s_http_server_opts, 0, sizeof(s_http_server_opts));
     s_http_server_opts.root_dir = root;
 

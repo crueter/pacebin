@@ -1,10 +1,10 @@
 # pacebin
 
-A dead-simple, self-hostable, filesystem-backed pastebin, written in C using [Mongoose](https://cesanta.com).
+A dead-simple, self-hostable, filesystem-backed pastebin and file hosting service, written in C using [Mongoose](https://mongoose.ws/).
 
-This project is largely based off of my [clink](https://git.swurl.xyz/swirl/clink) project. Almost all the main code comes from there, and it uses the exact same design philosophies.
+This project is largely based off of my [clink](https://git.swurl.xyz/swirl/clink.git) project. Almost all the main code comes from there, and it uses the exact same design philosophies.
 
-Please access this project on my [Gitea](https://git.swurl.xyz/swirl/pacebin) instance, NOT GitHub.
+Please access this project on my [Gitea](https://git.swurl.xyz/swirl/pacebin.git) instance, NOT GitHub.
 
 ## Maintenance Note
 This project is still maintained! Occasional certificate expirations may occur, this is due to disputes between my ISP and I regarding server hosting and certificate renewal. Please be patient, I have a life. :)
@@ -34,10 +34,10 @@ To build this project, you'll need a libc implementation (only tested with glibc
 1. Clone this repository:
 
 ```bash
-git clone https://git.swurl.xyz/swirl/pacebin && cd pacebin
+git clone https://git.swurl.xyz/swirl/pacebin.git && cd pacebin
 ```
 
-2. Now, you need to compile. When compiling, you can optionally choose to disable the ability to use custom links for pastes. This can easily be done by setting `DISABLE_CUSTOM_LINKS` to 1; i.e. `make DISABLE_CUSTOM_LINKS=1`. Defaults to 0, enabling them.
+2. Now, you need to compile.
 ```bash
 make
 ```
@@ -106,16 +106,15 @@ Your site should be running at https://your.doma.in. Test it by going there, and
 # Contributions
 Contributions are always welcome.
 
+# pacectl
+pacebin contains an additional `pacectl` utility. Pastes are stored in the format `UUID/filename`.
+
+Run `pacectl` for commands and syntax help.
+
 # FAQ
+
 ## A user has made a paste containing bad content! What do I do?
-Clean it up, janny!
-
-Deleting a paste can be done simply by running:
-```bash
-rm /srv/pacebin/*/BADLINKHERE
-```
-
-Replace `/srv/pacebin` with whatever your data directory is.
+See the pacectl section.
 
 ## Can I blacklist certain words from being used in pastes or custom short links?
 No. While it might be possible through some NGINX stuff, **this is not supported nor it is encouraged.**
@@ -143,7 +142,7 @@ location /paste {
 ## Why'd you make this?
 Every pastebin sucks. Simple as. All of the self-hostable options I could find had problems, including:
 - Loads of unnecessary dependencies
-- Huge executable size (Go lol)
+- Huge executable size (thanks, Go)
 - Used some bloated webapp with no basic API
 - Feature bloat; i.e. encryption, password protection, file upload, syntax highlighting, etc.
 - Written in Ruby, or some other bad language
@@ -154,4 +153,4 @@ Every pastebin sucks. Simple as. All of the self-hostable options I could find h
 
 This project is intended to be a pastebin that is **as simple as possible**. Literally just make, view, and delete pastes. That's it.
 
-If you, by chance, need encryption, password protection, etc. then use PrivateBin or something.
+If you, by chance, need encryption, password protection, etc. then use PrivateBin.
