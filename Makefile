@@ -4,9 +4,9 @@ systemd_dir=${DESTDIR}${confdir}/systemd/system
 nginx_dir=${DESTDIR}${confdir}/nginx
 bindir=${DESTDIR}${prefix}/bin
 
-MAX_SIZE	?= 52428800
+MAX_SIZE	?= 104857600
 CC			?= gcc
-CFLAGS		:= -O2 -DMG_MAX_RECV_BUF_SIZE=${MAX_SIZE} ${CFLAGS}
+CFLAGS		:= -O2 -D MG_MAX_RECV_BUF_SIZE=${MAX_SIZE} ${CFLAGS}
 
 BIN			:= pacebin
 PACECTL 	:= pacectl
