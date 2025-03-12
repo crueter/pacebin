@@ -4,7 +4,7 @@ A dead-simple, self-hostable, filesystem-backed pastebin and file hosting servic
 
 This project is largely based off of my [clink](https://git.swurl.xyz/swirl/clink.git) project. Almost all the main code comes from there, and it uses the exact same design philosophies.
 
-Please access this project on my [Gitea](https://git.swurl.xyz/swirl/pacebin.git) instance, NOT GitHub.
+Please access this project on my [cgit](https://git.swurl.xyz/swirl/pacebin.git) instance, NOT GitHub.
 
 ## Maintenance Note
 This project is still maintained! Occasional certificate expirations may occur, this is due to disputes between my ISP and I regarding server hosting and certificate renewal. Please be patient, I have a life. :)
@@ -141,6 +141,7 @@ location /paste {
 
 ## Why'd you make this?
 Every pastebin sucks. Simple as. All of the self-hostable options I could find had problems, including:
+
 - Loads of unnecessary dependencies
 - Huge executable size (thanks, Go)
 - Used some bloated webapp with no basic API
